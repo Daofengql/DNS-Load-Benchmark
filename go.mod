@@ -1,4 +1,4 @@
-module DNS_Stresser
+module github.com/Daofengql/DNS-Load-Benchmark
 
 go 1.23
 

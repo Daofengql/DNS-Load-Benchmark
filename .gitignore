@@ -1,0 +1,4 @@
+/dns-load-benchmark
+/dns-load-benchmark.exe
+*.test
+.idea/

@@ -1,115 +1,101 @@
-# 高并发 DNS 压力测试工具
+# DNS-Load-Benchmark
 
-**这是一个使用 Go 编写的高并发 DNS 压力测试工具。**  
-它能够通过模拟大量 DNS 请求，借助公共 DNS 服务器放大请求，从而测试自建权威 DNS 的性能和稳定性。
+`DNS-Load-Benchmark` 是一个用于 DNS 基础设施容量验证的小型命令行工具，适合在自有或已授权的 DNS 环境中做吞吐、延迟和错误率观察。
 
----
+它支持对单个 resolver 进行测试，也支持使用用户自备 resolver 列表进行轮询分发。项目本身不内置、不维护、不推荐任何公共 resolver 列表。
 
-## 特性
+## 功能特点
 
-1. **高并发**：利用 Goroutine 并发发送 DNS 查询，最大化测试压力。
-2. **公共 DNS 放大**：通过多个公共 DNS 服务器转发请求，快速施加负载。
-3. **随机子域名生成**：动态生成随机的多级子域名，避免缓存影响，确保请求多样性。
-4. **支持自定义查询类型**：支持 A、MX、NS 等多种 DNS 查询类型。
-5. **易于扩展**：可自定义增加 DNS 服务器列表和测试参数。
+- 支持 UDP/TCP 查询。
+- 支持 A、AAAA、CNAME、MX、NS、TXT 等常见查询类型。
+- 支持固定 QPS、并发 worker、测试时长和单次请求超时配置。
+- 支持随机子域名前缀，用于降低缓存命中对基准结果的影响。
+- 支持多个 resolver 轮询分发，并输出整体与分 resolver 统计。
+- 支持文本摘要和 JSON 输出。
 
----
+## 使用边界
 
-## 使用方法
+请只在你拥有或明确获得授权的 DNS 基础设施上运行测试。  
+如果使用外部 resolver 或第三方网络资源，请确保你有对应授权，并遵守其服务条款、速率限制和可接受使用政策。
 
-### 1. 安装
+多 resolver 模式主要面向封闭实验环境、企业自有递归节点、合作方授权节点或故障排查场景。公开环境下建议优先使用自有 resolver 或专门的压测链路，不建议把第三方公共 resolver 作为常规测试路径。
 
-确保您已安装 Go（1.16 或更高版本）。
-
-```bash
-go build -o dns_stress_test main.go
-```
-
-### 2. 运行
+## 构建
 
 ```bash
-./dns_stress_test -domain="example.com" -type="A"
+go build -o dns-load-benchmark ./cmd/dns-load-benchmark
 ```
 
-- **`-domain`**：测试的主域名（默认值为 `example.com`）。
-- **`-type`**：DNS 查询类型（默认值为 `A`，支持 `A`、`MX`、`NS` 等）。
+Windows:
 
-### 3. 示例
+```powershell
+go build -o dns-load-benchmark.exe ./cmd/dns-load-benchmark
+```
 
-测试域名 `test.com` 的 A 记录：
+## 基本用法
+
+测试本机 resolver：
 
 ```bash
-./dns_stress_test -domain="test.com" -type="A"
+./dns-load-benchmark -domain example.com -resolver 127.0.0.1:53 -rate 100 -duration 30s
 ```
 
-测试域名 `example.com` 的 MX 记录：
+测试指定 resolver：
 
 ```bash
-./dns_stress_test -domain="example.com" -type="MX"
+./dns-load-benchmark -domain example.com -resolver 192.0.2.53:53 -type A -rate 500 -concurrency 64
 ```
 
----
+使用多个 resolver 轮询分发：
 
-## 配置
-
-### 添加更多 DNS 服务器
-
-编辑代码中的 `dnsServers` 列表，添加您需要的公共 DNS 服务器。例如：
-
-```go
-dnsServers := []string{
-    "8.8.8.8:53",
-    "8.8.4.4:53",
-    "1.1.1.1:53",
-    "1.0.0.1:53",
-    "9.9.9.9:53",
-    "208.67.222.222:53", // OpenDNS
-    "208.67.220.220:53", // OpenDNS
-}
+```bash
+./dns-load-benchmark \
+  -domain example.com \
+  -resolver 192.0.2.53:53 \
+  -resolver 198.51.100.53:53 \
+  -rate 1000 \
+  -duration 1m
 ```
 
-### 调整发送频率
+从文件读取 resolver：
 
-可通过在 `sendDNSQueries` 函数内调整 `time.Sleep` 控制请求频率，例如：
-
-```go
-time.Sleep(10 * time.Millisecond) // 每 10 毫秒发送一次请求
+```bash
+./dns-load-benchmark -domain example.com -resolver-file examples/resolvers.example.txt -rate 1000
 ```
 
----
+输出 JSON：
 
-## 工作原理
+```bash
+./dns-load-benchmark -domain example.com -resolver 127.0.0.1:53 -json
+```
 
-1. **公共 DNS 放大**  
-   工具通过公共 DNS 服务器代理请求，将负载传递到自建的权威 DNS，从而测试其性能。
+## 参数
 
-2. **随机子域名生成**  
-   每次请求都会生成一个随机多级子域名（例如 `abc.def.ghi.example.com`），确保测试多样性，绕过缓存。
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `-domain` | 必填 | 查询的基础域名 |
+| `-resolver` | 可重复 | DNS resolver，格式为 `host:port`；未填写时使用 `127.0.0.1:53` |
+| `-resolver-file` | 空 | 从文本文件读取 resolver，一行一个，支持 `#` 注释 |
+| `-type` | `A` | DNS 查询类型 |
+| `-protocol` | `udp` | `udp` 或 `tcp` |
+| `-rate` | `100` | 目标 QPS |
+| `-concurrency` | `16` | 并发 worker 数 |
+| `-duration` | `30s` | 测试时长 |
+| `-timeout` | `2s` | 单次查询超时 |
+| `-random-prefix` | `true` | 是否在域名前添加随机标签 |
+| `-label-depth` | `2` | 随机标签层级 |
+| `-json` | `false` | 输出 JSON 汇总 |
 
-3. **高并发请求**  
-   使用 Goroutine 并发向多个公共 DNS 服务器发送请求，模拟高负载环境。
+## 输出说明
 
----
+工具会输出：
 
-## 注意事项
-
-1. **测试合法性**  
-   在使用该工具进行压力测试前，请确保对目标 DNS 服务器拥有合法测试权限。
-
-2. **对网络的影响**  
-   该工具可能产生大量网络流量，请避免对生产环境造成不必要的影响。
-
-3. **公共 DNS 限制**  
-   部分公共 DNS 服务器可能对过多请求采取限流策略，请合理配置负载分布。
-
----
+- 实际 QPS。
+- 总请求数、响应数、错误数。
+- RCODE 分布。
+- 平均延迟、P50、P95、P99。
+- 多 resolver 场景下的分 resolver 统计。
 
 ## 许可证
 
-本项目基于 [Apache 2.0 许可证](https://www.apache.org/licenses/LICENSE-2.0) 开源，您可以自由使用、修改和分发，但需保留原始版权声明及许可证信息。
-
----
-
-## 联系
-
-如有问题或建议，请提交 Issue 或 Pull Request。
+Apache License 2.0
